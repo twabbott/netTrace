@@ -2,10 +2,12 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace netTrace
+namespace NetTrace
 {
-    public class TraceInfo
+    public sealed class TraceInfo
     {
+        internal TraceInfo() { }
+
         /// <summary>
         ///     A list of all lines that were logged to the TraceInfo object.
         /// </summary>
@@ -19,6 +21,13 @@ namespace netTrace
         public bool HasExceptionLogged { get; set; } = false;
 
 
+        /// <summary>
+        ///     Dumps the contents of the Lines collection to a string.
+        /// </summary>
+        /// 
+        /// <returns>
+        ///     A string that has all the lines.
+        /// </returns>
         public override string ToString()
         {
             return string.Join("\r\n", Lines);

@@ -2,59 +2,30 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
-using System.Text;
+using System.Linq;
 using System.Threading;
 
-namespace netTrace
+namespace NetTrace
 {
-    public class TraceContext : IDisposable
+    public sealed class TraceContext : IDisposable
     {
-        private int _refCount = 1;
+        #region private
+
+        private List<TraceContext> _instances = new List<TraceContext>();
         private Guid _id = Guid.NewGuid();
         private static AsyncLocal<TraceContext> _current = new AsyncLocal<TraceContext>();
         private Action<TraceInfo> _finalizeCallback;
 
-        /// <summary>
-        ///     Output handler for all traces, once they are finalized.
-        /// </summary>
-        public static event Action<TraceInfo> FinalizeCallback;
-
-
-        /// <summary>
-        ///     Initializes a new TraceContext object, and ensures that only one
-        ///     instance can be created at a time, per async context.
-        /// </summary>
-        public TraceContext(Action<TraceInfo> finalizeCallback = null)
+        private TraceContext(Action<TraceInfo> finalizeCallback)
         {
-            if (_current.Value != null)
+            if (_current.Value == null)
             {
-                // Looks like someone else created a trace context (oops).
-                _current.Value._refCount++;
-                return;
+                _current.Value = this;
             }
+            _current.Value._instances.Add(this);
 
             _finalizeCallback = finalizeCallback;
-            _current.Value = this;
             TraceInfoCache.InitializeTraceInfo(_id);
-        }
-
-
-        /// <summary>
-        ///     Causes all trace info to be dumped to the output handler
-        /// </summary>
-        public void Dispose()
-        {
-            if (_current.Value == null || 
-                --_current.Value._refCount > 0 ||
-                !TraceInfoCache.TryFinalizeTraceInfo(_id, out TraceInfo info))
-            {
-                return;
-            }
-
-            _finalizeCallback?.Invoke(info);
-            FinalizeCallback?.Invoke(info);
-
-            _current.Value = null;
         }
 
 
@@ -69,13 +40,64 @@ namespace netTrace
         /// </param>
         private static void Log(string text, bool isException = false)
         {
-            if (_current.Value == null || !TraceInfoCache.TryGetTraceInfo(_current.Value._id, out TraceInfo info))
+            if (_current.Value == null)
             {
                 return;
             }
 
-            info.Lines.Add(text);
-            info.HasExceptionLogged |= isException;
+            // Broadcast to all listeners in the call stack
+            _current.Value._instances.ForEach(context =>
+            {
+                if (TraceInfoCache.TryGetTraceInfo(context._id, out TraceInfo info))
+                {
+                    info.Lines.Add(text);
+                    info.HasExceptionLogged |= isException;
+                }
+            });
+        }
+
+        #endregion
+
+
+        /// <summary>
+        ///     Output handler for all traces, once they are finalized.
+        /// </summary>
+        public static event Action<TraceInfo> FinalizeCallback;
+
+
+        /// <summary>
+        ///     Causes all trace info to be dumped to the output handler
+        /// </summary>
+        public void Dispose()
+        {
+            if (_current.Value == null || _current.Value._instances[_current.Value._instances.Count - 1] != this)
+            {
+                return;
+            }
+
+            // Get our TraceInfo object from the cache
+            TraceInfoCache.TryFinalizeTraceInfo(_id, out TraceInfo info);
+
+            // Remove ourselves from the call stack
+            _current.Value._instances.RemoveAt(_current.Value._instances.Count - 1);
+            if (_current.Value._instances.Count == 0)
+            {
+                _current.Value = null;
+            }
+
+            // Log to all trace listeners
+            _finalizeCallback?.Invoke(info);
+            FinalizeCallback?.Invoke(info);
+        }
+
+
+        /// <summary>
+        ///     Initializes a new TraceContext object, and ensures that only one
+        ///     instance can be created at a time, per async context.
+        /// </summary>
+        public static TraceContext Begin(Action<TraceInfo> finalizeCallback = null)
+        {
+            return new TraceContext(finalizeCallback);
         }
 
 

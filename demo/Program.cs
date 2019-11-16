@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using netTrace;
+using NetTrace;
 
 namespace demo
 {
@@ -18,7 +18,7 @@ namespace demo
 
         static async Task Main(string[] args)
         {
-            using (new TraceContext(OutputHandler))
+            using (TraceContext.Begin(OutputHandler))
             {
                 try
                 {
@@ -47,16 +47,13 @@ namespace demo
     {
         public async Task Foo()
         {
-            using (new TraceContext(info => Console.WriteLine("This should never get called.")))
-            {
-                TraceContext.WriteLine("MyClass.Foo - starting");
+            TraceContext.WriteLine("MyClass.Foo - starting");
 
-                await Bar().ConfigureAwait(false);
+            await Bar().ConfigureAwait(false);
 
-                await Task.Delay(100).ConfigureAwait(false);
+            await Task.Delay(100).ConfigureAwait(false);
 
-                TraceContext.WriteLine("MyClass.Foo - finished");
-            }
+            TraceContext.WriteLine("MyClass.Foo - finished");
         }
 
         public async Task Bar()
@@ -64,8 +61,8 @@ namespace demo
             TraceContext.WriteLine("MyClass.Bar - starting");
             await Task.Delay(100).ConfigureAwait(false);
 
-            //throw new ApplicationException("YEEEET!");
-            TraceContext.WriteLine("MyClass.Bar - finished!");
+            throw new ApplicationException("YEEEET!");
+            //TraceContext.WriteLine("MyClass.Bar - finished!");
         }
     }
 }
