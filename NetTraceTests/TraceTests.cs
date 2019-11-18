@@ -4,6 +4,9 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NetTrace;
 using FluentAssertions;
 using System.Xml;
+using System.Collections.Generic;
+using System.Threading;
+using System.Diagnostics;
 
 namespace NetTraceTests
 {
@@ -56,16 +59,13 @@ namespace NetTraceTests
 
         public async Task HappyPath_Foo()
         {
-            using (TraceContext.Begin(info => Console.WriteLine("This should never get called.")))
-            {
-                TraceContext.WriteLine("HappyPath_Foo-start");
+            TraceContext.WriteLine("HappyPath_Foo-start");
 
-                await HappyPath_Bar().ConfigureAwait(false);
+            await HappyPath_Bar().ConfigureAwait(false);
 
-                await Task.Delay(100).ConfigureAwait(false);
+            await Task.Delay(100).ConfigureAwait(false);
 
-                TraceContext.WriteLine("HappyPath_Foo-end");
-            }
+            TraceContext.WriteLine("HappyPath_Foo-end");
         }
 
         public async Task HappyPath_Bar()
@@ -199,16 +199,13 @@ namespace NetTraceTests
 
         public async Task Exception_Foo()
         {
-            using (TraceContext.Begin(info => Console.WriteLine("This should never get called.")))
-            {
-                TraceContext.WriteLine("Exception_Foo-start");
+            TraceContext.WriteLine("Exception_Foo-start");
 
-                await Exception_Bar().ConfigureAwait(false);
+            await Exception_Bar().ConfigureAwait(false);
 
-                await Task.Delay(100).ConfigureAwait(false);
+            await Task.Delay(100).ConfigureAwait(false);
 
-                TraceContext.WriteLine("Exception_Foo-end");
-            }
+            TraceContext.WriteLine("Exception_Foo-end");
         }
 
         public async Task Exception_Bar()
@@ -270,16 +267,13 @@ namespace NetTraceTests
 
         public async Task Nested_Foo(Action<TraceInfo> finalizeCallback)
         {
-            using (TraceContext.Begin(info => Console.WriteLine("This should never get called.")))
-            {
-                TraceContext.WriteLine("Nested_Foo-start");
+            TraceContext.WriteLine("Nested_Foo-start");
 
-                await Nested_NewContext(finalizeCallback).ConfigureAwait(false);
+            await Nested_NewContext(finalizeCallback).ConfigureAwait(false);
 
-                await Task.Delay(100).ConfigureAwait(false);
+            await Task.Delay(100).ConfigureAwait(false);
 
-                TraceContext.WriteLine("Nested_Foo-end");
-            }
+            TraceContext.WriteLine("Nested_Foo-end");
         }
 
         public async Task Nested_NewContext(Action<TraceInfo> finalizeCallback)
@@ -414,6 +408,89 @@ namespace NetTraceTests
             }
 
             // Nothing to assert.  Just making sure we don't get a crash.
+        }
+
+        [TestMethod]
+        public void StressTestThreads()
+        {
+            DateTime start = DateTime.Now;
+            int count = 1000;
+            List<Thread> threads = new List<Thread>(count);
+
+            ManualResetEvent ev = new ManualResetEvent(false);
+            CountdownEvent cde = new CountdownEvent(count);
+
+            // Spawn a bunch of background workers
+            Debug.WriteLine($"Master - spawning threads.");
+            for (int i = 0; i < count; i++)
+            {
+                int num = i; // local copy of i gets captured into closure
+                Thread t = new Thread(async () =>
+                {
+                    Debug.WriteLine($"Task {num} - waiting for start.");
+                    // Wait until the main thread says I can go
+                    ev.WaitOne();
+
+                    // Do the test
+                    Debug.WriteLine($"Task {num} - starting.");
+                    await HappyPath();
+
+                    cde.Signal();
+                    Debug.WriteLine($"Task {num} - finished.");
+                });
+                t.IsBackground = true;
+                t.Start();
+
+                threads.Add(t);
+            }
+
+            // Tell all the workers to go.
+            Debug.WriteLine($"Master - Setting the event, waiting for all threads to complete.");
+            ev.Set();
+            cde.Wait();
+
+            Debug.WriteLine($"Master - finished.");
+            Debug.WriteLine($"Finished in {(DateTime.Now - start):hh\\:mm\\:ss\\.fff}");
+        }
+
+
+        [TestMethod]
+        public async Task StressTestTasks()
+        {
+            DateTime start = DateTime.Now;
+            int count = 1000;
+            List<Task> tasks = new List<Task>(count);
+
+            ManualResetEvent ev = new ManualResetEvent(false);
+
+            // Spawn a bunch of background workers
+            Debug.WriteLine($"Master - spawning tasks.");
+            for (int i = 0; i < count; i++)
+            {
+                int num = i; // local copy of i gets captured into closure
+                Task t = Task.Run(async () =>
+                {
+                    Debug.WriteLine($"Task {num} - waiting for start.");
+                    // Wait until the main thread says I can go
+                    ev.WaitOne();
+
+                    // Do the test
+                    Debug.WriteLine($"Task {num} - starting.");
+                    await HappyPath();
+                    Debug.WriteLine($"Task {num} - finished.");
+                });
+
+                tasks.Add(t);
+            }
+
+            // Tell all the workers to go.
+            Debug.WriteLine($"Master - Releasing mutex, waiting for all to complete.");
+            ev.Set();
+
+            // Wait for all the workers to complete.
+            await Task.WhenAll(tasks);
+            Debug.WriteLine($"Master - finished.");
+            Debug.WriteLine($"Finished in {(DateTime.Now - start):hh\\:mm\\:ss\\.fff}");
         }
     }
 }
