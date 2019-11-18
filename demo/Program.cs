@@ -61,8 +61,8 @@ namespace demo
             TraceContext.WriteLine("MyClass.Bar - starting");
             await Task.Delay(100).ConfigureAwait(false);
 
-            throw new ApplicationException("YEEEET!");
-            //TraceContext.WriteLine("MyClass.Bar - finished!");
+            //throw new ApplicationException("YEEEET!");
+            TraceContext.WriteLine("MyClass.Bar - finished!");
         }
     }
 }

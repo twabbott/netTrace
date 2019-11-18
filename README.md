@@ -1,6 +1,20 @@
-# netTrace
-Trace utility for collecting/tracking log info for asynchronous code.  
+# NetTrace
+A trace utility for collecting/tracking log info in multi-threaded code.  
 
+Sifting through log info for a single request in a multi-threaded environment is difficult, because
+a typical log file contains output for many different operations that are all happening at the same
+time.  The problem is compounded when log info is sent to a separate server, and because of network latency, your output arrives out of order.  
+
+The `TraceContext` class allows you to collect info on a per-thread (or per threading context)
+basis, and when the request is complete you can dump all trace info to the log file in one single write operation.
+
+NetTrace was designed with the following goals in mind:
+* Optimal performance with minimal overhead.  All write operations are O(1).
+* No need to re-instrument code in place.  All logging is done to a static object.
+* Log info is gathered on a per-thread basis, and functions as expected when using async / await.
+
+
+## Getting Started
 Basic example code:
 ```C#
 using (TraceContext.Begin(info => Console.WriteLine(info.ToString())))
@@ -14,7 +28,7 @@ Essentially, you wrap an initial block of code that you want to trace with a `us
 
 You must specify some kind of output handler that will get called when `IDispose` gets called.  You can do this either by passing a function to the constructor, or you can set a global handler using the `TraceContext.FinalizeCallback` event.
 
-Here is a more involved sample.  Note that you don't have to pass a `TraceContext` object around.  All we have to do is call the `WriteLine` method, and whatever we log will get collected in the right place:
+Here is a more involved example.  Note that you don't have to pass a `TraceContext` object around.  All we have to do is call the `WriteLine` method, and whatever we log will get collected in the right place:
 ```C#
 namespace demo
 {
@@ -82,7 +96,7 @@ namespace demo
 }
 ```
 
-Here is some sample output.  Note the thread id was changed at one point:
+Here is some sample output.  Note the thread id got changed at one point:
 ```
 Got some trace info.
 No exception was logged.
@@ -120,7 +134,15 @@ System.ApplicationException: YEEEET!
 Press any key...
 ```
 
-Format for each line that the `WriteLine` function generates is:
+The `WriteLine` function formats each line of debug info as follows:
 ```
 YYYY/MM/DD HH:MM:SS.xxx [thread-id] filename(line-number) FuncName - whatever text you give.
 ```
+
+# References
+For more info on `AsyncLocal` and example code, here are some of the references I found:
+
+[MSDN Documentation on AsyncLocal](https://docs.microsoft.com/en-us/dotnet/api/system.threading.asynclocal-1?view=netframework-4.8):
+* The `AsyncLocal` type allows you to declare a static variable that is local to the current thread, and which stays with the current thread even when async/await changes the current thread on you.
+* Contains a concrete example that I found the most helpful, which demonstrates how using the `[ThreadLocal]` attribute will get you into trouble when using async/await.
+ 

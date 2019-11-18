@@ -7,53 +7,25 @@ using System.Threading;
 
 namespace NetTrace
 {
+    /// <summary>
+    ///     A class for aggregating debug trace output of a single thread (or 
+    ///     threading context) into one collection, so that the info gathered 
+    ///     can be logged in one write operation.
+    /// </summary>
     public sealed class TraceContext : IDisposable
     {
         #region private
 
-        private List<TraceContext> _instances = new List<TraceContext>();
-        private Guid _id = Guid.NewGuid();
-        private static AsyncLocal<TraceContext> _current = new AsyncLocal<TraceContext>();
+        private static AsyncLocal<TraceInfo> _current = new AsyncLocal<TraceInfo>();
         private Action<TraceInfo> _finalizeCallback;
 
         private TraceContext(Action<TraceInfo> finalizeCallback)
         {
-            if (_current.Value == null)
-            {
-                _current.Value = this;
-            }
-            _current.Value._instances.Add(this);
+            // Make a new instance, and push any exsisting instance onto the 
+            // stack.
+            _current.Value = new TraceInfo(_current.Value);
 
             _finalizeCallback = finalizeCallback;
-            TraceInfoCache.InitializeTraceInfo(_id);
-        }
-
-
-        /// <summary>
-        ///     Called by the Trace class to log a single line of text.  This 
-        ///     method finds the current trace context (if one exists), and logs
-        ///     to it.
-        /// </summary>
-        /// 
-        /// <param name="text">
-        ///     Text that the caller wants to log.
-        /// </param>
-        private static void Log(string text, bool isException = false)
-        {
-            if (_current.Value == null)
-            {
-                return;
-            }
-
-            // Broadcast to all listeners in the call stack
-            _current.Value._instances.ForEach(context =>
-            {
-                if (TraceInfoCache.TryGetTraceInfo(context._id, out TraceInfo info))
-                {
-                    info.Lines.Add(text);
-                    info.HasExceptionLogged |= isException;
-                }
-            });
         }
 
         #endregion
@@ -66,24 +38,14 @@ namespace NetTrace
 
 
         /// <summary>
-        ///     Causes all trace info to be dumped to the output handler
+        ///     Flushes all trace info to the output handler
         /// </summary>
         public void Dispose()
         {
-            if (_current.Value == null || _current.Value._instances[_current.Value._instances.Count - 1] != this)
-            {
-                return;
-            }
-
-            // Get our TraceInfo object from the cache
-            TraceInfoCache.TryFinalizeTraceInfo(_id, out TraceInfo info);
-
-            // Remove ourselves from the call stack
-            _current.Value._instances.RemoveAt(_current.Value._instances.Count - 1);
-            if (_current.Value._instances.Count == 0)
-            {
-                _current.Value = null;
-            }
+            // Pop our info off the stack
+            TraceInfo info = _current.Value;
+            _current.Value = info.Previous;
+            info.Previous = null;
 
             // Log to all trace listeners
             _finalizeCallback?.Invoke(info);
@@ -114,11 +76,16 @@ namespace NetTrace
             [CallerFilePath] string sourceFilePath = "",
             [CallerLineNumber] int sourceLineNumber = 0)
         {
+            if (_current.Value == null)
+            {
+                return;
+            }
+
             DateTime now = DateTime.Now;
             string fileName = Path.GetFileName(sourceFilePath);
 
             string line = $"{DateTime.Now:yyyy/MM/dd HH:mm:ss.fff} [{Thread.CurrentThread.ManagedThreadId:000}] {fileName}({sourceLineNumber}) {memberName} - {message}";
-            TraceContext.Log(line);
+            _current.Value.Log(line, false);
         }
 
 
@@ -130,15 +97,20 @@ namespace NetTrace
         /// <param name="message">An optional message.</param>
         public static void LogException(Exception ex, string message = null)
         {
+            if (_current.Value == null)
+            {
+                return;
+            }
+
             DateTime now = DateTime.Now;
 
             if (message != null)
             {
                 string line = $"{DateTime.Now:yyyy/MM/dd HH:mm:ss.fff} [{Thread.CurrentThread.ManagedThreadId:000}] EXCEPTION - {message}";
-                TraceContext.Log(line);
+                _current.Value.Log(line, false);
             }
 
-            TraceContext.Log(ex.ToString(), true);
+            _current.Value.Log(ex.ToString(), true);
         }
     }
 }

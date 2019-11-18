@@ -411,50 +411,6 @@ namespace NetTraceTests
         }
 
         [TestMethod]
-        public void StressTestThreads()
-        {
-            DateTime start = DateTime.Now;
-            int count = 1000;
-            List<Thread> threads = new List<Thread>(count);
-
-            ManualResetEvent ev = new ManualResetEvent(false);
-            CountdownEvent cde = new CountdownEvent(count);
-
-            // Spawn a bunch of background workers
-            Debug.WriteLine($"Master - spawning threads.");
-            for (int i = 0; i < count; i++)
-            {
-                int num = i; // local copy of i gets captured into closure
-                Thread t = new Thread(async () =>
-                {
-                    Debug.WriteLine($"Task {num} - waiting for start.");
-                    // Wait until the main thread says I can go
-                    ev.WaitOne();
-
-                    // Do the test
-                    Debug.WriteLine($"Task {num} - starting.");
-                    await HappyPath();
-
-                    cde.Signal();
-                    Debug.WriteLine($"Task {num} - finished.");
-                });
-                t.IsBackground = true;
-                t.Start();
-
-                threads.Add(t);
-            }
-
-            // Tell all the workers to go.
-            Debug.WriteLine($"Master - Setting the event, waiting for all threads to complete.");
-            ev.Set();
-            cde.Wait();
-
-            Debug.WriteLine($"Master - finished.");
-            Debug.WriteLine($"Finished in {(DateTime.Now - start):hh\\:mm\\:ss\\.fff}");
-        }
-
-
-        [TestMethod]
         public async Task StressTestTasks()
         {
             DateTime start = DateTime.Now;
@@ -490,7 +446,55 @@ namespace NetTraceTests
             // Wait for all the workers to complete.
             await Task.WhenAll(tasks);
             Debug.WriteLine($"Master - finished.");
-            Debug.WriteLine($"Finished in {(DateTime.Now - start):hh\\:mm\\:ss\\.fff}");
+        }
+
+        [TestMethod]
+        public void NonAsync()
+        {
+            TraceInfo info = null;
+            using (TraceContext.Begin(ti => info = ti))
+            {
+                try
+                {
+                    TraceContext.WriteLine("Test-start");
+
+                    NonAsync_Foo();
+
+                    TraceContext.WriteLine("Test-end");
+                }
+                catch (Exception ex)
+                {
+                    TraceContext.LogException(ex, "error");
+                }
+            }
+
+            info.Lines.Should().HaveCount(6);
+            ValidateTrace(
+                info,
+                false,
+                "Test-start",
+                "NonAsync_Foo-start",
+                "NonAsync_Bar-start",
+                "NonAsync_Bar-end",
+                "NonAsync_Foo-end",
+                "Test-end"
+            );
+        }
+
+        public void NonAsync_Foo()
+        {
+            TraceContext.WriteLine("NonAsync_Foo-start");
+
+            NonAsync_Bar();
+
+            TraceContext.WriteLine("NonAsync_Foo-end");
+        }
+
+        public void NonAsync_Bar()
+        {
+            TraceContext.WriteLine("NonAsync_Bar-start");
+
+            TraceContext.WriteLine("NonAsync_Bar-end");
         }
     }
 }
