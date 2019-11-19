@@ -426,13 +426,15 @@ namespace NetTraceTests
                 int num = i; // local copy of i gets captured into closure
                 Task t = Task.Run(async () =>
                 {
-                    Debug.WriteLine($"Task {num} - waiting for start.");
                     // Wait until the main thread says I can go
+                    Debug.WriteLine($"Task {num} - waiting for start.");
                     ev.WaitOne();
 
-                    // Do the test
+                    // Execute the HappyPath test
                     Debug.WriteLine($"Task {num} - starting.");
+
                     await HappyPath();
+
                     Debug.WriteLine($"Task {num} - finished.");
                 });
 
@@ -449,6 +451,47 @@ namespace NetTraceTests
         }
 
         [TestMethod]
+        public void StressTestThreads()
+        {
+            int count = 1000;
+
+            ManualResetEvent ev = new ManualResetEvent(false);
+            CountdownEvent cde = new CountdownEvent(count);
+
+            // Spawn a bunch of background workers
+            Debug.WriteLine($"Master - spawning threads.");
+            for (int i = 0; i < count; i++)
+            {
+                int num = i; // local copy of i gets captured into closure
+                Thread t = new Thread(() =>
+                {
+                    // Wait until the main thread says I can go
+                    Debug.WriteLine($"Thread {num} - waiting for start.");
+                    ev.WaitOne();
+
+                    // Execute the NonAsync test
+                    Debug.WriteLine($"Thread {num} - starting.");
+
+                    NonAsync();
+
+                    cde.Signal();
+                    Debug.WriteLine($"Thread {num} - finished.");
+                });
+
+                t.IsBackground = true;
+                t.Start();
+            }
+
+            // Tell all the workers to go.
+            Debug.WriteLine($"Master - Releasing mutex, waiting for all to complete.");
+            ev.Set();
+
+            // Wait for all the workers to complete.
+            cde.Wait(3000).Should().BeTrue("Test should complete in less than 3 seconds");
+            Debug.WriteLine($"Master - finished.");
+        }
+
+        [TestMethod]
         public void NonAsync()
         {
             TraceInfo info = null;
@@ -459,6 +502,7 @@ namespace NetTraceTests
                     TraceContext.WriteLine("Test-start");
 
                     NonAsync_Foo();
+                    Thread.Sleep(100);
 
                     TraceContext.WriteLine("Test-end");
                 }
@@ -486,6 +530,7 @@ namespace NetTraceTests
             TraceContext.WriteLine("NonAsync_Foo-start");
 
             NonAsync_Bar();
+            Thread.Sleep(100);
 
             TraceContext.WriteLine("NonAsync_Foo-end");
         }
@@ -493,6 +538,8 @@ namespace NetTraceTests
         public void NonAsync_Bar()
         {
             TraceContext.WriteLine("NonAsync_Bar-start");
+
+            Thread.Sleep(100);
 
             TraceContext.WriteLine("NonAsync_Bar-end");
         }

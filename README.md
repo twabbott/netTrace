@@ -140,9 +140,11 @@ YYYY/MM/DD HH:MM:SS.xxx [thread-id] filename(line-number) FuncName - whatever te
 ```
 
 # References
-For more info on `AsyncLocal` and example code, here are some of the references I found:
+It’s important to understand that when you use async/await, every time you await a long-running operation, .NET can (i.e., usually will) switch threads on you.  This means that keeping any kind of thread-local storage will not work.  For this reason, they created the `AsyncLocal<T>` type.  This is how the TraceContext object keeps track of all its trace info.
+
+For more info on `AsyncLocal<T>` and example code, here are some of the references I found:
 
 [MSDN Documentation on AsyncLocal](https://docs.microsoft.com/en-us/dotnet/api/system.threading.asynclocal-1?view=netframework-4.8):
-* The `AsyncLocal` type allows you to declare a static variable that is local to the current thread, and which stays with the current thread even when async/await changes the current thread on you.
+* The `AsyncLocal<T>` type allows you to declare a static variable that is local to the current thread, and which stays with the current thread even when async/await changes the current thread on you.
 * Contains a concrete example that I found the most helpful, which demonstrates how using the `[ThreadLocal]` attribute will get you into trouble when using async/await.
  
