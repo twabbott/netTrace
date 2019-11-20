@@ -43,14 +43,31 @@ namespace NetTrace
         ///     A flag indicating whether the information being logged 
         ///     represents an exception stack trace or other error info.
         /// </param>
-        internal void Log(string text, bool isException)
+        internal void Log(
+            DateTime timeStamp,
+            int threadId,
+            string filename,
+            int lineNumber,
+            string className,
+            string memberName,
+            string message,
+            Exception exception)
         {
-            Lines.Add(text);
-            HasExceptionLogged |= isException;
+            Events.Add(new TraceEvent {
+                TimeStamp = timeStamp,
+                ThreadId = threadId,
+                Filename = filename,
+                LineNumber = lineNumber,
+                ClassName = className,
+                MemberName = memberName,
+                Message = message,
+                Exception = exception
+            });
+            HasExceptionLogged |= exception != null;
 
             if (Previous != null)
             {
-                Previous.Log(text, isException);
+                Previous.Log(timeStamp, threadId, filename, lineNumber, className, memberName, message, exception);
             }
         }
 
@@ -60,7 +77,7 @@ namespace NetTrace
         /// <summary>
         ///     A list of all lines that were logged to the TraceInfo object.
         /// </summary>
-        public List<string> Lines { get; private set; } = new List<string>(100);
+        public List<TraceEvent> Events { get; private set; } = new List<TraceEvent>(100);
 
 
         /// <summary>
@@ -71,15 +88,19 @@ namespace NetTrace
 
 
         /// <summary>
-        ///     Dumps the contents of the Lines collection to a string.
+        ///     Dumps the contents of the Events collection to a string.
         /// </summary>
         /// 
         /// <returns>
-        ///     A string that has all the lines.
+        ///     A string representation of the entire trace.
         /// </returns>
         public override string ToString()
         {
-            return string.Join("\r\n", Lines);
+            StringBuilder sb = new StringBuilder();
+
+            Events.ForEach(item => sb.AppendLine(item.ToString()));
+
+            return sb.ToString();
         }
     }
 }

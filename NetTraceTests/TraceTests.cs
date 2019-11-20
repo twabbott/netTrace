@@ -10,13 +10,29 @@ using System.Diagnostics;
 
 namespace NetTraceTests
 {
+    class MyTraceContext : TraceContext
+    {
+        public Action<TraceInfo> _inheritedCallback;
+
+        public MyTraceContext(Action<TraceInfo> instCallback = null, Action<TraceInfo> inheritedCallback = null) : base(instCallback)
+        {
+            _inheritedCallback = inheritedCallback;
+        }
+
+        protected override void OnFinalize(TraceInfo info)
+        {
+            _inheritedCallback?.Invoke(info);
+        }
+    }
+
+
     [TestClass]
     public class TraceTests
     {
         public void ValidateTrace(TraceInfo info, bool hasException, params string[] lines)
         {
             int i = 0;
-            info.Lines.ForEach(actualLine => actualLine.Should().Contain(lines[i++]));
+            info.Events.ForEach(actualLine => actualLine.ToString().Should().Contain(lines[i++]));
             i.Should().Equals(lines.Length); // Make sure we got all the way through the list.
 
             info.HasExceptionLogged.Should().Equals(hasException);
@@ -26,25 +42,26 @@ namespace NetTraceTests
         public async Task HappyPath()
         {
             TraceInfo info = null;
-            using (TraceContext.Begin(ti => info = ti))
+            using (new TraceContext(ti => info = ti))
             {
                 try
                 {
-                    TraceContext.WriteLine("Test-start");
+                    TraceContext.Log("Test-start");
 
                     await HappyPath_Foo();
 
                     await Task.Delay(100).ConfigureAwait(false);
 
-                    TraceContext.WriteLine("Test-end");
+                    TraceContext.Log("Test-end");
                 }
                 catch (Exception ex)
                 {
-                    TraceContext.LogException(ex, "error");
+                    TraceContext.Log("error", ex);
                 }
             }
 
-            info.Lines.Should().HaveCount(6);
+            Debug.WriteLine(info.ToString());
+            info.Events.Should().HaveCount(6);
             ValidateTrace(
                 info,
                 false,
@@ -59,50 +76,51 @@ namespace NetTraceTests
 
         public async Task HappyPath_Foo()
         {
-            TraceContext.WriteLine("HappyPath_Foo-start");
+            TraceContext.Log("HappyPath_Foo-start");
 
             await HappyPath_Bar().ConfigureAwait(false);
 
             await Task.Delay(100).ConfigureAwait(false);
 
-            TraceContext.WriteLine("HappyPath_Foo-end");
+            TraceContext.Log("HappyPath_Foo-end");
         }
 
         public async Task HappyPath_Bar()
         {
-            TraceContext.WriteLine("HappyPath_Bar-start");
+            TraceContext.Log("HappyPath_Bar-start");
             await Task.Delay(100).ConfigureAwait(false);
 
-            TraceContext.WriteLine("HappyPath_Bar-end");
+            TraceContext.Log("HappyPath_Bar-end");
         }
 
         [TestMethod]
         public async Task CallWriteLineWithoutTraceContext()
         {
-            TraceContext.WriteLine("This should not get logged.");
+            TraceContext.Log("This should not get logged.");
 
             TraceInfo info = null;
-            using (TraceContext.Begin(ti => info = ti))
+            using (new TraceContext(ti => info = ti))
             {
                 try
                 {
-                    TraceContext.WriteLine("Test-start");
+                    TraceContext.Log("Test-start");
 
                     await HappyPath_Foo();
 
                     await Task.Delay(100).ConfigureAwait(false);
 
-                    TraceContext.WriteLine("Test-end");
+                    TraceContext.Log("Test-end");
                 }
                 catch (Exception ex)
                 {
-                    TraceContext.LogException(ex, "error");
+                    TraceContext.Log("error", ex);
                 }
             }
 
-            TraceContext.WriteLine("This should not get logged.");
+            TraceContext.Log("This should not get logged.");
 
-            info.Lines.Should().HaveCount(6);
+            Debug.WriteLine(info.ToString());
+            info.Events.Should().HaveCount(6);
             ValidateTrace(
                 info,
                 false,
@@ -119,13 +137,14 @@ namespace NetTraceTests
         public async Task TraceContextWithNoLogs()
         {
             TraceInfo info = null;
-            using (TraceContext.Begin(ti => info = ti))
+            using (new TraceContext(ti => info = ti))
             {
                 // Do fake work...
                 await Task.Delay(100).ConfigureAwait(false);
             }
 
-            info.Lines.Should().HaveCount(0);
+            Debug.WriteLine(info.ToString());
+            info.Events.Should().HaveCount(0);
             ValidateTrace(
                 info,
                 false
@@ -136,21 +155,21 @@ namespace NetTraceTests
         public async Task HappyPathToString()
         {
             TraceInfo info = null;
-            using (TraceContext.Begin(ti => info = ti))
+            using (new TraceContext(ti => info = ti))
             {
                 try
                 {
-                    TraceContext.WriteLine("Test-start");
+                    TraceContext.Log("Test-start");
 
                     await HappyPath_Foo();
 
                     await Task.Delay(100).ConfigureAwait(false);
 
-                    TraceContext.WriteLine("Test-end");
+                    TraceContext.Log("Test-end");
                 }
                 catch (Exception ex)
                 {
-                    TraceContext.LogException(ex, "error");
+                    TraceContext.Log("error", ex);
                 }
             }
 
@@ -167,25 +186,26 @@ namespace NetTraceTests
         public async Task Exception()
         {
             TraceInfo info = null;
-            using (TraceContext.Begin(ti => info = ti))
+            using (new TraceContext(ti => info = ti))
             {
                 try
                 {
-                    TraceContext.WriteLine("Test-start");
+                    TraceContext.Log("Test-start");
 
                     await Exception_Foo();
 
                     await Task.Delay(100).ConfigureAwait(false);
 
-                    TraceContext.WriteLine("Test-end");
+                    TraceContext.Log("Test-end");
                 }
                 catch (Exception ex)
                 {
-                    TraceContext.LogException(ex, "error");
+                    TraceContext.Log("error", ex);
                 }
             }
 
-            info.Lines.Should().HaveCount(5);
+            Debug.WriteLine(info.ToString());
+            info.Events.Should().HaveCount(4);
             ValidateTrace(
                 info,
                 true,
@@ -199,18 +219,18 @@ namespace NetTraceTests
 
         public async Task Exception_Foo()
         {
-            TraceContext.WriteLine("Exception_Foo-start");
+            TraceContext.Log("Exception_Foo-start");
 
             await Exception_Bar().ConfigureAwait(false);
 
             await Task.Delay(100).ConfigureAwait(false);
 
-            TraceContext.WriteLine("Exception_Foo-end");
+            TraceContext.Log("Exception_Foo-end");
         }
 
         public async Task Exception_Bar()
         {
-            TraceContext.WriteLine("Exception_Bar-start");
+            TraceContext.Log("Exception_Bar-start");
             await Task.Delay(100).ConfigureAwait(false);
 
             throw new Exception("Yeeeet!");
@@ -220,25 +240,26 @@ namespace NetTraceTests
         public async Task NestedContexts()
         {
             TraceInfo info1 = null, info2 = null;
-            using (TraceContext.Begin(ti => info1 = ti))
+            using (new TraceContext(ti => info1 = ti))
             {
                 try
                 {
-                    TraceContext.WriteLine("Outer-start");
+                    TraceContext.Log("Outer-start");
 
                     await Nested_Foo(ti => info2 = ti);
 
                     await Task.Delay(100).ConfigureAwait(false);
 
-                    TraceContext.WriteLine("Outer-end");
+                    TraceContext.Log("Outer-end");
                 }
                 catch (Exception ex)
                 {
-                    TraceContext.LogException(ex, "error");
+                    TraceContext.Log("error", ex);
                 }
             }
 
-            info1.Lines.Should().HaveCount(10);
+            Debug.WriteLine(info1.ToString());
+            info1.Events.Should().HaveCount(10);
             ValidateTrace(
                 info1,
                 true,
@@ -254,7 +275,8 @@ namespace NetTraceTests
                 "Outer-end"
             );
 
-            info2.Lines.Should().HaveCount(4);
+            Debug.WriteLine(info2.ToString());
+            info2.Events.Should().HaveCount(4);
             ValidateTrace(
                 info2,
                 false,
@@ -267,39 +289,39 @@ namespace NetTraceTests
 
         public async Task Nested_Foo(Action<TraceInfo> finalizeCallback)
         {
-            TraceContext.WriteLine("Nested_Foo-start");
+            TraceContext.Log("Nested_Foo-start");
 
             await Nested_NewContext(finalizeCallback).ConfigureAwait(false);
 
             await Task.Delay(100).ConfigureAwait(false);
 
-            TraceContext.WriteLine("Nested_Foo-end");
+            TraceContext.Log("Nested_Foo-end");
         }
 
         public async Task Nested_NewContext(Action<TraceInfo> finalizeCallback)
         {
-            TraceContext.WriteLine("Nested_NewContext-outer-start");
+            TraceContext.Log("Nested_NewContext-outer-start");
 
-            using (TraceContext.Begin(finalizeCallback))
+            using (new TraceContext(finalizeCallback))
             {
-                TraceContext.WriteLine("Nested_NewContext-start");
+                TraceContext.Log("Nested_NewContext-start");
 
                 await Nested_Bar().ConfigureAwait(false);
 
                 await Task.Delay(100).ConfigureAwait(false);
 
-                TraceContext.WriteLine("Nested_NewContext-end");
+                TraceContext.Log("Nested_NewContext-end");
             }
 
-            TraceContext.WriteLine("Nested_NewContext-outer-end");
+            TraceContext.Log("Nested_NewContext-outer-end");
         }
 
         public async Task Nested_Bar()
         {
-            TraceContext.WriteLine("Nested_Bar-start");
+            TraceContext.Log("Nested_Bar-start");
             await Task.Delay(100).ConfigureAwait(false);
 
-            TraceContext.WriteLine("Nested_Bar-end");
+            TraceContext.Log("Nested_Bar-end");
         }
 
         [TestMethod]
@@ -308,29 +330,67 @@ namespace NetTraceTests
             TraceInfo info = null;
             Action<TraceInfo> globalCallback = ti => info = ti;
 
-            TraceContext.FinalizeCallback += globalCallback;
-
-            using (TraceContext.Begin())
+            using (new MyTraceContext(inheritedCallback: globalCallback))
             {
                 try
                 {
-                    TraceContext.WriteLine("Test-start");
+                    TraceContext.Log("Test-start");
 
                     await HappyPath_Foo();
 
                     await Task.Delay(100).ConfigureAwait(false);
 
-                    TraceContext.WriteLine("Test-end");
+                    TraceContext.Log("Test-end");
                 }
                 catch (Exception ex)
                 {
-                    TraceContext.LogException(ex, "error");
+                    TraceContext.Log("error", ex);
                 }
             }
 
-            TraceContext.FinalizeCallback -= globalCallback;
+            Debug.WriteLine(info.ToString());
+            info.Events.Should().HaveCount(6);
+            ValidateTrace(
+                info,
+                false,
+                "Test-start",
+                "HappyPath_Foo-start",
+                "HappyPath_Bar-start",
+                "HappyPath_Bar-end",
+                "HappyPath_Foo-end",
+                "Test-end"
+            );
+        }
 
-            info.Lines.Should().HaveCount(6);
+
+        [TestMethod]
+        public async Task FinalizerLocalAndGlobal()
+        {
+            TraceInfo info = null, info2 = null;
+            Action<TraceInfo> globalCallback = ti => info2 = ti;
+
+            using (new MyTraceContext(ti => info = ti, globalCallback))
+            {
+                try
+                {
+                    TraceContext.Log("Test-start");
+
+                    await HappyPath_Foo();
+
+                    await Task.Delay(100).ConfigureAwait(false);
+
+                    TraceContext.Log("Test-end");
+                }
+                catch (Exception ex)
+                {
+                    TraceContext.Log("error", ex);
+                }
+            }
+
+            object.ReferenceEquals(info, info2).Should().BeTrue();
+
+            Debug.WriteLine(info.ToString());
+            info.Events.Should().HaveCount(6);
             ValidateTrace(
                 info,
                 false,
@@ -344,66 +404,23 @@ namespace NetTraceTests
         }
 
         [TestMethod]
-        public async Task FinalizerLocalAndGlobal()
-        {
-            TraceInfo info1 = null, info2 = null;
-            Action<TraceInfo> globalCallback = ti => info2 = ti;
-
-            TraceContext.FinalizeCallback += globalCallback;
-
-            using (TraceContext.Begin(ti => info1 = ti))
-            {
-                try
-                {
-                    TraceContext.WriteLine("Test-start");
-
-                    await HappyPath_Foo();
-
-                    await Task.Delay(100).ConfigureAwait(false);
-
-                    TraceContext.WriteLine("Test-end");
-                }
-                catch (Exception ex)
-                {
-                    TraceContext.LogException(ex, "error");
-                }
-            }
-
-            TraceContext.FinalizeCallback -= globalCallback;
-
-            object.ReferenceEquals(info1, info2).Should().BeTrue();
-
-            info1.Lines.Should().HaveCount(6);
-            ValidateTrace(
-                info1,
-                false,
-                "Test-start",
-                "HappyPath_Foo-start",
-                "HappyPath_Bar-start",
-                "HappyPath_Bar-end",
-                "HappyPath_Foo-end",
-                "Test-end"
-            );
-        }
-
-        [TestMethod]
         public async Task FinalizerNone()
         {
-            using (TraceContext.Begin())
+            using (new TraceContext())
             {
                 try
                 {
-                    TraceContext.WriteLine("Test-start");
+                    TraceContext.Log("Test-start");
 
                     await HappyPath_Foo();
 
                     await Task.Delay(100).ConfigureAwait(false);
 
-                    TraceContext.WriteLine("Test-end");
+                    TraceContext.Log("Test-end");
                 }
                 catch (Exception ex)
                 {
-                    TraceContext.LogException(ex, "error");
+                    TraceContext.Log("error", ex);
                 }
             }
 
@@ -495,24 +512,25 @@ namespace NetTraceTests
         public void NonAsync()
         {
             TraceInfo info = null;
-            using (TraceContext.Begin(ti => info = ti))
+            using (new TraceContext(ti => info = ti))
             {
                 try
                 {
-                    TraceContext.WriteLine("Test-start");
+                    TraceContext.Log("Test-start");
 
                     NonAsync_Foo();
                     Thread.Sleep(100);
 
-                    TraceContext.WriteLine("Test-end");
+                    TraceContext.Log("Test-end");
                 }
                 catch (Exception ex)
                 {
-                    TraceContext.LogException(ex, "error");
+                    TraceContext.Log("error", ex);
                 }
             }
 
-            info.Lines.Should().HaveCount(6);
+            Debug.WriteLine(info.ToString());
+            info.Events.Should().HaveCount(6);
             ValidateTrace(
                 info,
                 false,
@@ -527,21 +545,21 @@ namespace NetTraceTests
 
         public void NonAsync_Foo()
         {
-            TraceContext.WriteLine("NonAsync_Foo-start");
+            TraceContext.Log("NonAsync_Foo-start");
 
             NonAsync_Bar();
             Thread.Sleep(100);
 
-            TraceContext.WriteLine("NonAsync_Foo-end");
+            TraceContext.Log("NonAsync_Foo-end");
         }
 
         public void NonAsync_Bar()
         {
-            TraceContext.WriteLine("NonAsync_Bar-start");
+            TraceContext.Log("NonAsync_Bar-start");
 
             Thread.Sleep(100);
 
-            TraceContext.WriteLine("NonAsync_Bar-end");
+            TraceContext.Log("NonAsync_Bar-end");
         }
     }
 }

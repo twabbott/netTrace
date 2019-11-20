@@ -18,22 +18,29 @@ namespace demo
 
         static async Task Main(string[] args)
         {
-            using (TraceContext.Begin(OutputHandler))
+            Action anonFunc = () =>
+            {
+                TraceContext.Log("Inside an anonymous function");
+            };
+
+            using (new TraceContext(OutputHandler))
             {
                 try
                 {
-                    TraceContext.WriteLine("App start");
+                    TraceContext.Log("App start");
+
+                    anonFunc();
 
                     MyClass mc = new MyClass();
                     await mc.Foo();
 
                     await Task.Delay(100).ConfigureAwait(false);
 
-                    TraceContext.WriteLine("App end");
+                    TraceContext.Log("App end");
                 }
                 catch (Exception ex)
                 {
-                    TraceContext.LogException(ex, "Man, this was bad...");
+                    TraceContext.Log("Man, this was bad...", ex);
                 }
             }
 
@@ -47,22 +54,22 @@ namespace demo
     {
         public async Task Foo()
         {
-            TraceContext.WriteLine("MyClass.Foo - starting");
+            TraceContext.Log("starting");
 
             await Bar().ConfigureAwait(false);
 
             await Task.Delay(100).ConfigureAwait(false);
 
-            TraceContext.WriteLine("MyClass.Foo - finished");
+            TraceContext.Log("finished");
         }
 
         public async Task Bar()
         {
-            TraceContext.WriteLine("MyClass.Bar - starting");
+            TraceContext.Log("starting");
             await Task.Delay(100).ConfigureAwait(false);
 
             //throw new ApplicationException("YEEEET!");
-            TraceContext.WriteLine("MyClass.Bar - finished!");
+            TraceContext.Log("finished!");
         }
     }
 }

@@ -4,6 +4,7 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Linq;
 using System.Threading;
+using System.Diagnostics;
 
 namespace NetTrace
 {
@@ -12,14 +13,24 @@ namespace NetTrace
     ///     threading context) into one collection, so that the info gathered 
     ///     can be logged in one write operation.
     /// </summary>
-    public sealed class TraceContext : IDisposable
+    public class TraceContext : IDisposable
     {
         #region private
 
         private static AsyncLocal<TraceInfo> _current = new AsyncLocal<TraceInfo>();
         private Action<TraceInfo> _finalizeCallback;
 
-        private TraceContext(Action<TraceInfo> finalizeCallback)
+        #endregion
+
+        /// <summary>
+        ///     Creates a new TraceContext
+        /// </summary>
+        /// 
+        /// <param name="finalizeCallback">
+        ///     An optional callback method to handle the trace info, once the 
+        ///     trace is complete.
+        /// </param>
+        public TraceContext(Action<TraceInfo> finalizeCallback = null)
         {
             // Make a new instance, and push any exsisting instance onto the 
             // stack.
@@ -27,14 +38,6 @@ namespace NetTrace
 
             _finalizeCallback = finalizeCallback;
         }
-
-        #endregion
-
-
-        /// <summary>
-        ///     Output handler for all traces, once they are finalized.
-        /// </summary>
-        public static event Action<TraceInfo> FinalizeCallback;
 
 
         /// <summary>
@@ -47,31 +50,43 @@ namespace NetTrace
             _current.Value = info.Previous;
             info.Previous = null;
 
-            // Log to all trace listeners
             _finalizeCallback?.Invoke(info);
-            FinalizeCallback?.Invoke(info);
+            OnFinalize(info);
         }
 
 
         /// <summary>
-        ///     Initializes a new TraceContext object, and ensures that only one
-        ///     instance can be created at a time, per async context.
+        ///     Override this method to provide a general handler for all 
+        ///     traces.  Do not call this method.  This method is called by IDispose.
         /// </summary>
-        public static TraceContext Begin(Action<TraceInfo> finalizeCallback = null)
+        protected virtual void OnFinalize(TraceInfo info)
         {
-            return new TraceContext(finalizeCallback);
+            // Do nothing
         }
 
 
         /// <summary>
-        ///     Logs a line of text
+        ///     Logs an event
         /// </summary>
-        /// <param name="message"></param>
-        /// <param name="memberName"></param>
-        /// <param name="sourceFilePath"></param>
-        /// <param name="sourceLineNumber"></param>
-        public static void WriteLine(
+        /// 
+        /// <param name="message">
+        ///     A message that you want to log
+        /// </param>
+        /// <param name="exception">
+        ///     An optional exception that you want to log
+        /// </param>
+        /// <param name="memberName">
+        ///     Parameter value supplied for you by .NET
+        /// </param>
+        /// <param name="sourceFilePath">
+        ///     Parameter value supplied for you by .NET
+        /// </param>
+        /// <param name="sourceLineNumber">
+        ///     Parameter value supplied for you by .NET
+        /// </param>
+        public static void Log(
             string message,
+            Exception exception = null,
             [CallerMemberName] string memberName = "",
             [CallerFilePath] string sourceFilePath = "",
             [CallerLineNumber] int sourceLineNumber = 0)
@@ -81,36 +96,25 @@ namespace NetTrace
                 return;
             }
 
+            var stackTrace = new StackTrace(0, true);
+            var frame = stackTrace.GetFrame(1);
+
+            var method = frame.GetMethod();
+            string className = method.ReflectedType?.DeclaringType?.Name;
+            className = className == null ? "<no-class>" : className + ".";
+
             DateTime now = DateTime.Now;
             string fileName = Path.GetFileName(sourceFilePath);
 
-            string line = $"{DateTime.Now:yyyy/MM/dd HH:mm:ss.fff} [{Thread.CurrentThread.ManagedThreadId:000}] {fileName}({sourceLineNumber}) {memberName} - {message}";
-            _current.Value.Log(line, false);
-        }
-
-
-        /// <summary>
-        ///     Logs an exception that you caught.
-        /// </summary>
-        /// 
-        /// <param name="ex">An Exception object that you want to log.</param>
-        /// <param name="message">An optional message.</param>
-        public static void LogException(Exception ex, string message = null)
-        {
-            if (_current.Value == null)
-            {
-                return;
-            }
-
-            DateTime now = DateTime.Now;
-
-            if (message != null)
-            {
-                string line = $"{DateTime.Now:yyyy/MM/dd HH:mm:ss.fff} [{Thread.CurrentThread.ManagedThreadId:000}] EXCEPTION - {message}";
-                _current.Value.Log(line, false);
-            }
-
-            _current.Value.Log(ex.ToString(), true);
+            _current.Value.Log(
+                DateTime.Now,
+                Thread.CurrentThread.ManagedThreadId,
+                sourceFilePath,
+                sourceLineNumber,
+                className,
+                memberName,
+                message,
+                exception);
         }
     }
 }
