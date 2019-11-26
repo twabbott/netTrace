@@ -509,6 +509,19 @@ namespace NetTraceTests
         }
 
         [TestMethod]
+        public void Performance()
+        {
+            TraceInfo info = null;
+            using (new TraceContext(ti => info = ti))
+            {
+                for (int i = 0; i < 10000; i++)
+                {
+                    TraceContext.Log($"This is iteration {i}.");
+                }
+            }
+        }
+
+        [TestMethod]
         public void NonAsync()
         {
             TraceInfo info = null;

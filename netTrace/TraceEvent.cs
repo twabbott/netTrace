@@ -5,7 +5,7 @@ using System.Text;
 
 namespace NetTrace
 {
-    public struct TraceEvent
+    public class TraceEvent
     {
         /// <summary>
         ///     Time that the event was logged.
